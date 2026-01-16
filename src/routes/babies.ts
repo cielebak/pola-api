@@ -1,0 +1,223 @@
+import { FastifyPluginAsync } from 'fastify'
+import { query, queryOne } from '../db.js'
+
+interface CreateBabyBody {
+  name: string
+  birthDate: string
+  weightAtBirth?: number
+  heightAtBirth?: number
+  currentWeight?: number
+  currentHeight?: number
+  feedingGoal?: number
+  avatarUrl?: string
+}
+
+interface UpdateBabyBody {
+  name?: string
+  currentWeight?: number
+  currentHeight?: number
+  feedingGoal?: number
+  avatarUrl?: string
+}
+
+const babiesRoutes: FastifyPluginAsync = async (app) => {
+  // All routes require authentication
+  app.addHook('onRequest', (app as any).authenticate)
+
+  // GET /babies - List babies where user is caregiver
+  app.get('/', async (request) => {
+    const { userId } = request.user as { userId: string }
+
+    const babies = await query(
+      `SELECT b.*, c.role
+       FROM babies b
+       JOIN caregivers c ON b.id = c.baby_id
+       WHERE c.user_id = $1
+       ORDER BY b.created_at DESC`,
+      [userId]
+    )
+
+    return babies.map(b => ({
+      id: b.id,
+      name: b.name,
+      birthDate: b.birth_date,
+      weightAtBirth: b.weight_at_birth,
+      heightAtBirth: b.height_at_birth,
+      currentWeight: b.current_weight,
+      currentHeight: b.current_height,
+      feedingGoal: b.feeding_goal,
+      avatarUrl: b.avatar_url,
+      role: b.role,
+      ownerId: b.owner_id,
+      createdAt: b.created_at,
+      updatedAt: b.updated_at,
+    }))
+  })
+
+  // POST /babies - Create baby (user becomes owner)
+  app.post<{ Body: CreateBabyBody }>('/', async (request, reply) => {
+    const { userId } = request.user as { userId: string }
+    const { name, birthDate, weightAtBirth, heightAtBirth, currentWeight, currentHeight, feedingGoal, avatarUrl } = request.body
+
+    if (!name || !birthDate) {
+      return reply.code(400).send({ error: 'name and birthDate are required' })
+    }
+
+    // Create baby
+    const [baby] = await query(
+      `INSERT INTO babies (owner_id, name, birth_date, weight_at_birth, height_at_birth, current_weight, current_height, feeding_goal, avatar_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING *`,
+      [userId, name, birthDate, weightAtBirth, heightAtBirth, currentWeight, currentHeight, feedingGoal, avatarUrl]
+    )
+
+    // Add user as owner in caregivers
+    await query(
+      `INSERT INTO caregivers (baby_id, user_id, role) VALUES ($1, $2, 'owner')`,
+      [baby.id, userId]
+    )
+
+    return {
+      id: baby.id,
+      name: baby.name,
+      birthDate: baby.birth_date,
+      weightAtBirth: baby.weight_at_birth,
+      heightAtBirth: baby.height_at_birth,
+      currentWeight: baby.current_weight,
+      currentHeight: baby.current_height,
+      feedingGoal: baby.feeding_goal,
+      avatarUrl: baby.avatar_url,
+      role: 'owner',
+      ownerId: baby.owner_id,
+      createdAt: baby.created_at,
+    }
+  })
+
+  // PUT /babies/:id - Update baby
+  app.put<{ Params: { id: string }, Body: UpdateBabyBody }>('/:id', async (request, reply) => {
+    const { userId } = request.user as { userId: string }
+    const { id } = request.params
+    const { name, currentWeight, currentHeight, feedingGoal, avatarUrl } = request.body
+
+    // Check user is caregiver
+    const caregiver = await queryOne(
+      'SELECT role FROM caregivers WHERE baby_id = $1 AND user_id = $2',
+      [id, userId]
+    )
+
+    if (!caregiver) {
+      return reply.code(403).send({ error: 'Access denied' })
+    }
+
+    const [baby] = await query(
+      `UPDATE babies
+       SET name = COALESCE($2, name),
+           current_weight = COALESCE($3, current_weight),
+           current_height = COALESCE($4, current_height),
+           feeding_goal = COALESCE($5, feeding_goal),
+           avatar_url = COALESCE($6, avatar_url),
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [id, name, currentWeight, currentHeight, feedingGoal, avatarUrl]
+    )
+
+    return {
+      id: baby.id,
+      name: baby.name,
+      birthDate: baby.birth_date,
+      currentWeight: baby.current_weight,
+      currentHeight: baby.current_height,
+      feedingGoal: baby.feeding_goal,
+      avatarUrl: baby.avatar_url,
+      updatedAt: baby.updated_at,
+    }
+  })
+
+  // DELETE /babies/:id - Delete baby (owner only)
+  app.delete<{ Params: { id: string } }>('/:id', async (request, reply) => {
+    const { userId } = request.user as { userId: string }
+    const { id } = request.params
+
+    // Check user is owner
+    const baby = await queryOne(
+      'SELECT owner_id FROM babies WHERE id = $1',
+      [id]
+    )
+
+    if (!baby) {
+      return reply.code(404).send({ error: 'Baby not found' })
+    }
+
+    if (baby.owner_id !== userId) {
+      return reply.code(403).send({ error: 'Only owner can delete' })
+    }
+
+    await query('DELETE FROM babies WHERE id = $1', [id])
+
+    return { success: true }
+  })
+
+  // GET /babies/:id/caregivers - List caregivers
+  app.get<{ Params: { id: string } }>('/:id/caregivers', async (request, reply) => {
+    const { userId } = request.user as { userId: string }
+    const { id } = request.params
+
+    // Check user is caregiver
+    const isCarer = await queryOne(
+      'SELECT 1 FROM caregivers WHERE baby_id = $1 AND user_id = $2',
+      [id, userId]
+    )
+
+    if (!isCarer) {
+      return reply.code(403).send({ error: 'Access denied' })
+    }
+
+    const caregivers = await query(
+      `SELECT u.id, u.display_name, u.email, c.role, c.joined_at
+       FROM caregivers c
+       JOIN users u ON c.user_id = u.id
+       WHERE c.baby_id = $1
+       ORDER BY c.role DESC, c.joined_at ASC`,
+      [id]
+    )
+
+    return caregivers.map(c => ({
+      userId: c.id,
+      displayName: c.display_name,
+      email: c.email,
+      role: c.role,
+      joinedAt: c.joined_at,
+    }))
+  })
+
+  // DELETE /babies/:id/caregivers/:userId - Remove caregiver (owner only)
+  app.delete<{ Params: { id: string, odUserId: string } }>('/:id/caregivers/:odUserId', async (request, reply) => {
+    const { userId } = request.user as { userId: string }
+    const { id, odUserId } = request.params
+
+    // Check requester is owner
+    const baby = await queryOne(
+      'SELECT owner_id FROM babies WHERE id = $1',
+      [id]
+    )
+
+    if (!baby || baby.owner_id !== userId) {
+      return reply.code(403).send({ error: 'Only owner can remove caregivers' })
+    }
+
+    // Can't remove owner
+    if (odUserId === userId) {
+      return reply.code(400).send({ error: "Can't remove yourself as owner" })
+    }
+
+    await query(
+      'DELETE FROM caregivers WHERE baby_id = $1 AND user_id = $2',
+      [id, odUserId]
+    )
+
+    return { success: true }
+  })
+}
+
+export default babiesRoutes
