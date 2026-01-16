@@ -68,7 +68,7 @@ const invitationsRoutes: FastifyPluginAsync = async (app) => {
     return {
       code: invitation.code,
       babyName: invitation.baby_name,
-      ownerName: invitation.owner_name,
+      ownerName: invitation.owner_name || 'Użytkownik',
       expiresAt: invitation.expires_at,
     }
   })
