@@ -2,6 +2,7 @@ import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import jwt from '@fastify/jwt'
 import { db, initDb } from './db.js'
+import { initPush } from './push.js'
 import authRoutes from './routes/auth.js'
 import babiesRoutes from './routes/babies.js'
 import activitiesRoutes from './routes/activities.js'
@@ -62,6 +63,7 @@ app.get('/pola/invite/:code', async (request, reply) => {
 const start = async () => {
   try {
     await initDb()
+    initPush()
     const port = parseInt(process.env.PORT || '3000')
     await app.listen({ port, host: '0.0.0.0' })
     console.log(`🚀 Pola API running on port ${port}`)
