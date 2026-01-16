@@ -33,6 +33,24 @@ await app.register(invitationsRoutes, { prefix: '/api/v1/invitations' })
 // Health check
 app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }))
 
+// Apple App Site Association (for Universal Links)
+const APPLE_APP_ID = process.env.APPLE_APP_ID || '438LJWTRU3.com.cielebak.Pola'
+
+app.get('/.well-known/apple-app-site-association', async (request, reply) => {
+  reply.header('Content-Type', 'application/json')
+  return {
+    applinks: {
+      apps: [],
+      details: [
+        {
+          appID: APPLE_APP_ID,
+          paths: ['/pola/invite/*']
+        }
+      ]
+    }
+  }
+})
+
 // Invite redirect (Universal Link landing)
 app.get('/pola/invite/:code', async (request, reply) => {
   const { code } = request.params as { code: string }
