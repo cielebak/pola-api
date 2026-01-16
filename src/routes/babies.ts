@@ -29,9 +29,10 @@ const babiesRoutes: FastifyPluginAsync = async (app) => {
     const { userId } = request.user as { userId: string }
 
     const babies = await query(
-      `SELECT b.*, c.role
+      `SELECT b.*, c.role, u.display_name as owner_name
        FROM babies b
        JOIN caregivers c ON b.id = c.baby_id
+       JOIN users u ON b.owner_id = u.id
        WHERE c.user_id = $1
        ORDER BY b.created_at DESC`,
       [userId]
@@ -47,10 +48,10 @@ const babiesRoutes: FastifyPluginAsync = async (app) => {
       currentHeight: b.current_height,
       feedingGoal: b.feeding_goal,
       avatarUrl: b.avatar_url,
-      role: b.role,
+      isOwner: b.role === 'owner',
       ownerId: b.owner_id,
+      ownerName: b.owner_name,
       createdAt: b.created_at,
-      updatedAt: b.updated_at,
     }))
   })
 
@@ -62,6 +63,9 @@ const babiesRoutes: FastifyPluginAsync = async (app) => {
     if (!name || !birthDate) {
       return reply.code(400).send({ error: 'name and birthDate are required' })
     }
+
+    // Get user's display name
+    const user = await queryOne('SELECT display_name FROM users WHERE id = $1', [userId])
 
     // Create baby
     const [baby] = await query(
@@ -87,8 +91,9 @@ const babiesRoutes: FastifyPluginAsync = async (app) => {
       currentHeight: baby.current_height,
       feedingGoal: baby.feeding_goal,
       avatarUrl: baby.avatar_url,
-      role: 'owner',
+      isOwner: true,
       ownerId: baby.owner_id,
+      ownerName: user?.display_name || null,
       createdAt: baby.created_at,
     }
   })
@@ -122,15 +127,23 @@ const babiesRoutes: FastifyPluginAsync = async (app) => {
       [id, name, currentWeight, currentHeight, feedingGoal, avatarUrl]
     )
 
+    // Get owner name
+    const owner = await queryOne('SELECT display_name FROM users WHERE id = $1', [baby.owner_id])
+
     return {
       id: baby.id,
       name: baby.name,
       birthDate: baby.birth_date,
+      weightAtBirth: baby.weight_at_birth,
+      heightAtBirth: baby.height_at_birth,
       currentWeight: baby.current_weight,
       currentHeight: baby.current_height,
       feedingGoal: baby.feeding_goal,
       avatarUrl: baby.avatar_url,
-      updatedAt: baby.updated_at,
+      isOwner: caregiver.role === 'owner',
+      ownerId: baby.owner_id,
+      ownerName: owner?.display_name || null,
+      createdAt: baby.created_at,
     }
   })
 
