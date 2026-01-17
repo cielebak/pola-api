@@ -14,6 +14,7 @@ interface CreateBabyBody {
 
 interface UpdateBabyBody {
   name?: string
+  birth_date?: string
   currentWeight?: number
   currentHeight?: number
   feedingGoal?: number
@@ -102,7 +103,7 @@ const babiesRoutes: FastifyPluginAsync = async (app) => {
   app.put<{ Params: { id: string }, Body: UpdateBabyBody }>('/:id', async (request, reply) => {
     const { userId } = request.user as { userId: string }
     const { id } = request.params
-    const { name, currentWeight, currentHeight, feedingGoal, avatarUrl } = request.body
+    const { name, birth_date, currentWeight, currentHeight, feedingGoal, avatarUrl } = request.body
 
     // Check user is caregiver
     const caregiver = await queryOne(
@@ -117,14 +118,15 @@ const babiesRoutes: FastifyPluginAsync = async (app) => {
     const [baby] = await query(
       `UPDATE babies
        SET name = COALESCE($2, name),
-           current_weight = COALESCE($3, current_weight),
-           current_height = COALESCE($4, current_height),
-           feeding_goal = COALESCE($5, feeding_goal),
-           avatar_url = COALESCE($6, avatar_url),
+           birth_date = COALESCE($3, birth_date),
+           current_weight = COALESCE($4, current_weight),
+           current_height = COALESCE($5, current_height),
+           feeding_goal = COALESCE($6, feeding_goal),
+           avatar_url = COALESCE($7, avatar_url),
            updated_at = NOW()
        WHERE id = $1
        RETURNING *`,
-      [id, name, currentWeight, currentHeight, feedingGoal, avatarUrl]
+      [id, name, birth_date, currentWeight, currentHeight, feedingGoal, avatarUrl]
     )
 
     // Get owner name
