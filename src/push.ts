@@ -47,6 +47,7 @@ export async function sendPushToCarers(
   notification.alert = { title, body }
   notification.sound = 'default'
   notification.topic = 'com.cielebak.Pola'
+  notification.contentAvailable = true  // Enable background fetch / silent push
   notification.payload = { babyId, ...data }
 
   const deviceTokens = tokens.map(t => t.device_token)
